@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { StaffProvider, useStaff } from './StaffContext';
 import { Dashboard } from './components/Dashboard';
 import { StaffTable } from './components/StaffTable';
@@ -80,14 +80,15 @@ function AppContent() {
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // CRUCIAL: Hemos quitado el useEffect de onAuthStateChanged para evitar el auto-login congelado.
-
-  // Función mágica que abre el Login de Google obligando a elegir cuenta
+  // Función mágica que abre el Login de Google obligando a elegir cuenta y asignando el rol correcto
   const handleGoogleLogin = async (role: 'manager' | 'staff') => {
     setLoading(true);
     setLoginError('');
     try {
-      // TRUCO PRO: Forzamos a Google a pedir la cuenta siempre, incluso si ya iniciaste sesión antes
+      // Forzamos el cierre de sesión previo en Firebase para limpiar cualquier rastro de la memoria del navegador
+      await signOut(auth);
+
+      // Obligamos a Google a desplegar siempre la cajita de selección de cuenta
       googleProvider.setCustomParameters({
         prompt: 'select_account'
       });
@@ -96,7 +97,7 @@ function AppContent() {
       const user = result.user;
       const email = user.email || '';
       
-      // Control de Dominio: Filtro corporativo para Nfq (y permitimos Gmail para tu demo)
+      // Filtro corporativo: solo correos Nfq o cualquier Gmail normal para tus pruebas de desarrollo
       const isCorporateEmail = email.endsWith('@nfq.es') || email.includes('gmail.com');
       
       if (!isCorporateEmail) {
@@ -105,14 +106,16 @@ function AppContent() {
         return;
       }
 
+      // ASIGNACIÓN ESTRICTA SEGÚN EL BOTÓN PULSADO
       if (role === 'manager') {
-        // Obligamos al sistema a tratarlo como mánager sin importar el correo que elija en la demo
+        // Da igual la cuenta que elijan, si pulsan mánager, el TFM simulará que entra el perfil directivo principal
         login('ines.abadia@nfq.es', '0000', 'manager');
       } else {
-        // Portal Staff: Si el correo de Google existe en los empleados locales, lo usa. 
-        // Si usas tu cuenta personal que no está registrada, te asigna el primer consultor para que no se rompa la demo.
+        // Si pulsan Portal Staff, intentamos buscar si su correo existe en el JSON local
         const isOk = login(email, '0000', 'staff');
         if (!isOk) {
+          // Si entran con un Gmail personal que no está en la lista de empleados, les prestamos el perfil del primer consultor
+          // para que tus compañeros puedan trastear la app como si fueran un empleado real sin que de error.
           const empAsignado = employees.find(e => e.email === email) || employees[0];
           if (empAsignado) {
             login(empAsignado.email, '0000', 'staff');
@@ -188,7 +191,7 @@ function AppContent() {
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   };
 
-  // PANTALLA PRINCIPAL DE LOGIN (CON LOGO OFICIAL DE NFQ RESTAURADO)
+  // PANTALLA PRINCIPAL DE LOGIN
   if (!currentUser && !isManager) {
     return (
       <div className="flex h-screen w-full bg-slate-100 items-center justify-center p-4 font-sans text-xs">
@@ -268,7 +271,7 @@ function AppContent() {
     );
   }
 
-  // VISTA 1: INTERFAZ DEL CONSULTOR (PORTAL STAFF)
+  // VISTA 1: PORTAL STAFF (CONSULTOR)
   if (currentUser) {
     const currentEmp = employees.find((e) => e.id === currentUser.id) || currentUser;
     const googlePhoto = auth.currentUser?.photoURL || "https://lh3.googleusercontent.com/d/1ZRUArlFz7uZOmsEB8cVRBjTHcEZQejNQ";
@@ -544,7 +547,7 @@ function AppContent() {
     );
   }
 
-  // VISTA 2: INTERFAZ DEL CUADRO DIRECTIVO (MODULO MANAGER)
+  // VISTA 2: MODULO MANAGER (CUADRO DIRECTIVO)
   const googlePhoto = auth.currentUser?.photoURL || "https://fonts.gstatic.com/s/i/productlogos/googleg/v6/web-24dp/copy_of_googleg_standard_color_24dp.png";
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-900 font-sans overflow-hidden animate-in fade-in duration-500 text-xs">
